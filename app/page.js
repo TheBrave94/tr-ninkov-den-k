@@ -1,7 +1,9 @@
-"use client";
+import AppClient from "../components/AppClient";
 
-import App from "../components/App";
+// Appka je celá závislá na přihlášení a datech z prohlížeče (Supabase),
+// takže nemá smysl ji staticky generovat při buildu - vykresluje se vždy za běhu.
+export const dynamic = "force-dynamic";
 
 export default function Page() {
-  return <App />;
+  return <AppClient />;
 }
