@@ -3116,6 +3116,7 @@ function Nastaveni({ data, persist, currentUser }) {
     }
     setAdding(true);
     try {
+      await supabase.auth.refreshSession().catch(() => {});
       const { data: sessionData } = await supabase.auth.getSession();
       const requesterToken = sessionData?.session?.access_token;
       const res = await fetch("/api/create-user", {
@@ -3125,7 +3126,7 @@ function Nastaveni({ data, persist, currentUser }) {
       });
       const body = await res.json();
       if (!res.ok) {
-        setAddError(body.error || "Účet se nepodařilo založit.");
+        setAddError((body.error || "Účet se nepodařilo založit.") + (body.detail ? ` (${body.detail})` : ""));
         setAdding(false);
         return;
       }
