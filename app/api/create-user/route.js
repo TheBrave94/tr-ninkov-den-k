@@ -26,7 +26,10 @@ export async function POST(request) {
     const { data: requesterData, error: requesterError } = await requesterClient.auth.getUser(requesterToken);
 
     if (requesterError || !requesterData?.user) {
-      return NextResponse.json({ error: "Neplatné přihlášení." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Neplatné přihlášení.", detail: requesterError?.message || "žádný uživatel k tokenu" },
+        { status: 401 }
+      );
     }
 
     // ověř, že žadatel je v appce trenér
@@ -61,6 +64,6 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, userId: created.user.id });
   } catch (e) {
-    return NextResponse.json({ error: "Neočekávaná chyba serveru." }, { status: 500 });
+    return NextResponse.json({ error: "Neočekávaná chyba serveru.", detail: e?.message }, { status: 500 });
   }
 }
