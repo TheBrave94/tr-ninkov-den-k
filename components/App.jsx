@@ -696,9 +696,16 @@ export default function App() {
   }
 
   if (!authUser) {
+    if (data.users.length === 0) {
+      return (
+        <Wrap>
+          <FirstAccountSetup persist={persist} />
+        </Wrap>
+      );
+    }
     return (
       <Wrap>
-        <EmailLogin />
+        <PasswordLogin />
       </Wrap>
     );
   }
@@ -706,13 +713,6 @@ export default function App() {
   const currentUser = data.users.find((u) => u.email && u.email.toLowerCase() === authUser.email.toLowerCase());
 
   if (!currentUser) {
-    if (data.users.length === 0) {
-      return (
-        <Wrap>
-          <FirstAccountSetup email={authUser.email} persist={persist} />
-        </Wrap>
-      );
-    }
     return (
       <Wrap>
         <NoProfileScreen email={authUser.email} />
@@ -828,78 +828,95 @@ function Wrap({ children }) {
 
 // ---------- Login ----------
 
-function EmailLogin() {
+function PasswordLogin() {
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
-  async function send() {
-    if (!email.trim() || !email.includes("@")) {
-      setError("Zadej platný e-mail.");
+  async function login() {
+    if (!email.trim() || !password) {
+      setError("Zadej e-mail i heslo.");
       return;
     }
     setSending(true);
     setError("");
-    const { error: err } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined },
-    });
+    const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setSending(false);
     if (err) {
-      setError("Nepodařilo se odeslat přihlašovací odkaz. Zkus to prosím znovu.");
-      return;
+      setError("Nesprávný e-mail nebo heslo.");
     }
-    setSent(true);
   }
 
-  if (sent) {
-    return (
-      <div style={{ maxWidth: 380, margin: "60px auto", textAlign: "center" }}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 600, marginBottom: 8 }}>Zkontroluj e-mail</div>
-        <div style={{ color: C.textDim, fontSize: 14 }}>
-          Poslali jsme přihlašovací odkaz na <strong style={{ color: C.text }}>{email}</strong>. Klikni na něj a budeš uvnitř.
-        </div>
-      </div>
-    );
+  async function forgotPassword() {
+    if (!email.trim()) {
+      setError("Nejdřív napiš svůj e-mail nahoru, pak klikni na odkaz znovu.");
+      return;
+    }
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+    });
+    setResetSent(true);
   }
 
   return (
     <div style={{ maxWidth: 380, margin: "60px auto" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, letterSpacing: 1 }}>TRÉNINKOVÝ DENÍK</div>
-        <div style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>Přihlas se e-mailem, žádné heslo nepotřebuješ.</div>
+        <div style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>Přihlas se e-mailem a heslem, které ti dal trenér.</div>
       </div>
       <Card>
         <Field label="E-mail">
+          <TextInput autoFocus type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jmeno@email.cz" />
+        </Field>
+        <Field label="Heslo">
           <TextInput
-            autoFocus
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="jmeno@email.cz"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && login()}
+            placeholder="••••••••"
           />
         </Field>
         {error && <div style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{error}</div>}
-        <Btn variant="accent" style={{ width: "100%", justifyContent: "center" }} onClick={send} disabled={sending}>
-          {sending ? "Odesílám…" : "Poslat přihlašovací odkaz"}
+        {resetSent && <div style={{ color: C.success, fontSize: 13, marginBottom: 12 }}>Poslali jsme ti e-mail na obnovení hesla.</div>}
+        <Btn variant="accent" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }} onClick={login} disabled={sending}>
+          {sending ? "Přihlašuji…" : "Přihlásit se"}
         </Btn>
+        <button onClick={forgotPassword} style={{ background: "transparent", border: "none", color: C.textFaint, fontSize: 12, cursor: "pointer", width: "100%", textAlign: "center" }}>
+          Zapomenuté heslo?
+        </button>
       </Card>
     </div>
   );
 }
 
-function FirstAccountSetup({ email, persist }) {
+function FirstAccountSetup({ persist }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
 
   async function createFirstCoach() {
-    if (!name.trim()) {
-      setError("Zadej své jméno.");
+    if (!name.trim() || !email.trim() || password.length < 8) {
+      setError("Vyplň jméno, e-mail a heslo (alespoň 8 znaků).");
       return;
     }
-    const coach = { id: uid(), name: name.trim(), role: "coach", email, mainDisciplines: [] };
+    setSending(true);
+    setError("");
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password });
+    setSending(false);
+    if (signUpError) {
+      setError(signUpError.message || "Účet se nepodařilo založit.");
+      return;
+    }
+    if (!signUpData.session) {
+      setError("Účet je založený, ale je potřeba potvrdit e-mail — zkontroluj schránku a pak se přihlas heslem.");
+      return;
+    }
+    const coach = { id: uid(), name: name.trim(), role: "coach", email: email.trim().toLowerCase(), mainDisciplines: [] };
     await persist((prev) => ({ ...prev, users: [...prev.users, coach] }));
   }
 
@@ -913,10 +930,15 @@ function FirstAccountSetup({ email, persist }) {
         <Field label="Jméno trenéra">
           <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Jan Novák" />
         </Field>
-        <div style={{ fontSize: 12, color: C.textFaint, marginBottom: 12 }}>Účet bude spojený s e-mailem {email}.</div>
+        <Field label="E-mail">
+          <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jan@email.cz" />
+        </Field>
+        <Field label="Heslo (alespoň 8 znaků)">
+          <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+        </Field>
         {error && <div style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{error}</div>}
-        <Btn variant="accent" style={{ width: "100%", justifyContent: "center" }} onClick={createFirstCoach}>
-          Vytvořit účet trenéra
+        <Btn variant="accent" style={{ width: "100%", justifyContent: "center" }} onClick={createFirstCoach} disabled={sending}>
+          {sending ? "Vytvářím…" : "Vytvořit účet trenéra"}
         </Btn>
       </Card>
     </div>
@@ -928,7 +950,7 @@ function NoProfileScreen({ email }) {
     <div style={{ maxWidth: 380, margin: "60px auto", textAlign: "center" }}>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 600, marginBottom: 10 }}>Účet zatím nemáš založený</div>
       <div style={{ color: C.textDim, fontSize: 14, marginBottom: 16 }}>
-        Tvůj e-mail <strong style={{ color: C.text }}>{email}</strong> zatím není přiřazen k žádnému účtu. Popros trenéra, ať tě přidá v Nastavení se stejným e-mailem.
+        Tvůj e-mail <strong style={{ color: C.text }}>{email}</strong> zatím není přiřazen k žádnému účtu. Popros trenéra, ať ti v Nastavení založí přístup.
       </div>
       <Btn onClick={() => supabase.auth.signOut()}>Odhlásit se</Btn>
     </div>
@@ -3124,20 +3146,59 @@ function BackupSection({ data, persist }) {
 function Nastaveni({ data, persist, currentUser }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [disciplines, setDisciplines] = useState([]);
   const [role, setRole] = useState("athlete");
   const [editingVocId, setEditingVocId] = useState(null);
   const [vocDraft, setVocDraft] = useState("");
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState(null);
 
   function toggleDiscipline(d) {
     setDisciplines((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
   }
 
-  function addUser() {
-    if (!name.trim() || !email.trim() || !email.includes("@")) return;
-    const u = { id: uid(), name: name.trim(), role, email: email.trim().toLowerCase(), mainDisciplines: role === "athlete" ? disciplines : [] };
-    persist((prev) => ({ ...prev, users: [...prev.users, u] }));
-    setName(""); setEmail(""); setDisciplines([]);
+  function generatePassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    setPassword(out);
+  }
+
+  async function addUser() {
+    setAddError("");
+    if (!name.trim() || !email.trim() || !email.includes("@")) {
+      setAddError("Vyplň jméno a platný e-mail.");
+      return;
+    }
+    if (!password || password.length < 8) {
+      setAddError("Heslo musí mít alespoň 8 znaků.");
+      return;
+    }
+    setAdding(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const requesterToken = sessionData?.session?.access_token;
+      const res = await fetch("/api/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password, requesterToken }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setAddError(body.error || "Účet se nepodařilo založit.");
+        setAdding(false);
+        return;
+      }
+      const u = { id: uid(), name: name.trim(), role, email: email.trim().toLowerCase(), mainDisciplines: role === "athlete" ? disciplines : [] };
+      await persist((prev) => ({ ...prev, users: [...prev.users, u] }));
+      setCreatedInfo({ name: name.trim(), email: email.trim(), password });
+      setName(""); setEmail(""); setPassword(""); setDisciplines([]);
+    } catch (e) {
+      setAddError("Nepodařilo se spojit se serverem.");
+    }
+    setAdding(false);
   }
 
   function removeUser(id) {
@@ -3179,6 +3240,12 @@ function Nastaveni({ data, persist, currentUser }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Jméno"><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Petra Svobodová" /></Field>
           <Field label="E-mail"><TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="petra@email.cz" /></Field>
+          <Field label="Heslo (alespoň 8 znaků)">
+            <div style={{ display: "flex", gap: 8 }}>
+              <TextInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="heslo pro atleta" style={{ flex: 1 }} />
+              <Btn onClick={generatePassword}>Vygenerovat</Btn>
+            </div>
+          </Field>
           <Field label="Role">
             <Select value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="athlete">Atlet</option>
@@ -3209,7 +3276,21 @@ function Nastaveni({ data, persist, currentUser }) {
             </div>
           </Field>
         )}
-        <Btn variant="accent" onClick={addUser}><Plus size={15} />Přidat</Btn>
+        {addError && <div style={{ color: C.danger, fontSize: 13, margin: "10px 0" }}>{addError}</div>}
+        <Btn variant="accent" onClick={addUser} disabled={adding}>
+          <Plus size={15} />{adding ? "Zakládám…" : "Přidat"}
+        </Btn>
+        {createdInfo && (
+          <div style={{ marginTop: 14, background: C.successSoft, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 6 }}>
+              Účet pro <strong>{createdInfo.name}</strong> je hotový. Pošli mu tyhle přihlašovací údaje (jinde už je neuvidíš):
+            </div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 13 }}>
+              {createdInfo.email} <br /> heslo: {createdInfo.password}
+            </div>
+            <Btn onClick={() => setCreatedInfo(null)} style={{ marginTop: 8 }}>Zavřít</Btn>
+          </div>
+        )}
       </Card>
 
       <Card>
@@ -3318,7 +3399,7 @@ function Nastaveni({ data, persist, currentUser }) {
 
       <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "flex-start", color: C.textFaint, fontSize: 12 }}>
         <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span>Přístup do appky mají jen lidé s účtem přihlášeným přes e-mail (magický odkaz). Přidávej sem jen e-maily, kterým opravdu chceš přístup dát.</span>
+        <span>Účty se zakládají jen tady v appce a přihlašuje se e-mailem a heslem, které jsi zadal/a. Hesla si appka nikam neukládá — zvol si silné heslo a nikomu ho neposílej přes veřejné kanály.</span>
       </div>
     </div>
   );
